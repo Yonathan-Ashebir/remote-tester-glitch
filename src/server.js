@@ -48,8 +48,9 @@ fastify.get("/", (request, reply) => {
 
     mLog(MY_LOG_DEBUG, `Get request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
 
-    if (FETCH_MODULE_HASH in request.query) {
+    const useHash = (success, failure) => {
         let gen = crypto.createHash("md5")
+
         try {
             let stream = new fs.createReadStream(module)
             stream.on('data', (data) => {
@@ -57,38 +58,49 @@ fastify.get("/", (request, reply) => {
             })
 
             stream.on('error', e => {
-                mLog(MY_LOG_ERROR, "Module not found: " + e)
-                reply.errorCode = 404
-                reply.send("No module found")
+                mLog(MY_LOG_ERROR, "Error while generating hash: " + e)
+                failure(e)
             })
 
             stream.on('end', () => {
-                reply.send(gen.digest('hex'))
+                success(gen.digest('hex'))
             })
-
         } catch (e) {
-            mLog(MY_LOG_ERROR, "Module not found: " + e)
+            mLog(MY_LOG_ERROR, "Error while generating hash: " + e)
+            failure(e)
+        }
+    }
+
+    if (FETCH_MODULE_HASH in request.query) {
+        return useHash((hash) => reply.send(hash), () => {
             reply.errorCode = 404
             reply.send("No module found")
-        }
-        return
+        })
     }
 
     if (FETCH_MODULE in request.query) {
-        try {
-            let stream = fs.createReadStream(module)
-            stream.on('error', e => {
+        return useHash((hash) => {
+            if (hash !== request.query[FETCH_MODULE]) {
+                reply.errorCode = 404
+                return reply.send("Module is not available")
+            }
+            try {
+                let stream = fs.createReadStream(module)
+                stream.on('error', e => {
+                    mLog(MY_LOG_ERROR, "Module not found: " + e)
+                    reply.errorCode = 404
+                    reply.send("No module found")
+                })
+                reply.send(stream)
+            } catch (e) {
                 mLog(MY_LOG_ERROR, "Module not found: " + e)
                 reply.errorCode = 404
                 reply.send("No module found")
-            })
-            reply.send(stream)
-        } catch (e) {
-            mLog(MY_LOG_ERROR, "Module not found: " + e)
+            }
+        }, () => {
             reply.errorCode = 404
             reply.send("No module found")
-        }
-        return
+        });
     }
 
     reply.send('HELLO')
