@@ -1,5 +1,5 @@
 const path = require("path");
-const {FETCH_MODULE, FETCH_MODULE_HASH} = require('./constants.js')
+const {FETCH_MODULE_HASH} = require('./constants.js')
 const crypto = require('crypto')
 const fs = require('fs')
 
@@ -31,7 +31,7 @@ fastify.register(require("@fastify/view"), {
 fastify.register(require("@fastify/multipart"))
 
 const seo = require("./seo.json");
-const {MODULE_FILE, UPLOAD_MODULE, HASH_FILE} = require("./constants");
+const {MODULE_FILE, UPLOAD_MODULE, HASH_FILE, MODULE, FETCH_MODULE_ZIP, HASH} = require("./constants");
 const {mLog, MY_LOG_ERROR, MY_LOG_DEBUG, isAlphanumericUnderscore, doAsync} = require("./include");
 const util = require("util");
 if (seo.url === "glitch-default") {
@@ -43,14 +43,15 @@ if (seo.url === "glitch-default") {
  *
  * Returns pages/index.hbs with data built into it
  */
-fastify.get("/", (request, reply) => {
+fastify.get("/", async (request, reply) => {
     mLog(MY_LOG_DEBUG, `Get request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
 
     try {
+        const moduleDir = path.join(path.parse(__dirname).dir, 'modules', request.query[MODULE]);
+        const moduleZip = path.join(moduleDir, MODULE_FILE)
+        const moduleHash = path.join(moduleDir, HASH_FILE)
+
         if (FETCH_MODULE_HASH in request.query) {
-            const moduleDir = path.join(path.parse(__dirname).dir, 'modules', request.query[FETCH_MODULE_HASH]);
-            const moduleZip = path.join(moduleDir, MODULE_FILE)
-            const moduleHash = path.join(moduleDir, HASH_FILE)
             let stream = fs.createReadStream(moduleHash)
             stream.on('error', (e) => {
                 mLog(MY_LOG_ERROR, `Could not retrieve module hash: ${e}`)
@@ -60,10 +61,13 @@ fastify.get("/", (request, reply) => {
             return reply.send(stream)
         }
 
-        if (FETCH_MODULE in request.query) {
-            const moduleDir = path.join(path.parse(__dirname).dir, 'modules', request.query[FETCH_MODULE]);
-            const moduleZip = path.join(moduleDir, MODULE_FILE)
-            const moduleHash = path.join(moduleDir, HASH_FILE)
+        if (FETCH_MODULE_ZIP in request.query) {
+            if (HASH in request.query && (await util.promisify(fs.readFile)(moduleHash)).toString() !== request.query[HASH]) {
+                mLog(MY_LOG_ERROR, `Bad hash`)
+                reply.errorCode = 400
+                return reply.send("Bad hash")
+            }
+
             let stream = fs.createReadStream(moduleZip)
             stream.on('error', (e) => {
                 mLog(MY_LOG_ERROR, `Could not retrieve module: ${e}`)
