@@ -46,7 +46,7 @@ if (seo.url === "glitch-default") {
 fastify.get("/", (request, reply) => {
     const module = path.join(path.parse(__dirname).dir, 'modules', MODULE_FILE)
 
-    mLog(MY_LOG_DEBUG, `Request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
+    mLog(MY_LOG_DEBUG, `Get request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
 
     if (FETCH_MODULE_HASH in request.query) {
         let gen = crypto.createHash("md5")
@@ -100,19 +100,21 @@ fastify.get("/", (request, reply) => {
  * Accepts body data indicating the user choice
  */
 fastify.post("/upload", async (request, reply) => {
+    mLog(MY_LOG_DEBUG, `Upload request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
+
+    const module = path.join(path.parse(__dirname).dir, 'modules', MODULE_FILE)
     const authorization = request.headers['authorization']
 
     if (UPLOAD_MODULE in request.query) {
+
         if (!authorization || authorization !== process.env['UPLOAD_TOKEN']) {
             reply.errorCode = 401
             return reply.send("Invalid credentials")
         }
         try {
             const data = await request.file();
-            const fileName = `../modules/${MODULE_FILE}`;
-            const writableStream = fs.createWriteStream(fileName)
-            data.file.pipe(writableStream)
-            reply.send('File uploaded successfully');
+            data.file.pipe(fs.createWriteStream(module));
+            reply.send("File uploaded successfully");
         } catch (e) {
             mLog(MY_LOG_ERROR, `Module upload failed: ${e}`)
             reply.errorCode = 400
