@@ -7,22 +7,15 @@ fastify.register(fastifyMultipart);
 
 // Define a route for file uploads
 fastify.post('/upload', async (request, reply) => {
-    const data = await request.file();
+    let res = await new Promise((resolve) => {
+        setTimeout(() => resolve("HI"), 100000)
+    })
 
-    // Ensure the 'uploads' directory exists
-    if (!fs.existsSync('./uploads')) {
-        fs.mkdirSync('./uploads');
-    }
-
-    // Save the file to the 'uploads' directory
-    const fileName = `./uploads/${data.filename}`;
-    await fs.promises.writeFile(fileName, data.file);
-
-    reply.send({success: true, message: 'File uploaded successfully'});
+    reply.send(res)
 });
 
 // Start the server
-fastify.listen({port: 80}, (err, address) => {
+fastify.listen({port: 80, host: "0.0.0.0"}, (err, address) => {
     if (err) throw err;
     console.log(`Server listening on ${address}`);
 });

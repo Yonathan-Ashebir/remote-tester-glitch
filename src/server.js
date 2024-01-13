@@ -31,8 +31,8 @@ fastify.register(require("@fastify/view"), {
 fastify.register(require("@fastify/multipart"))
 
 const seo = require("./seo.json");
-const {MODULE_FILE, UPLOAD_MODULE} = require("./constants");
-const {mLog, MY_LOG_ERROR, MY_LOG_DEBUG} = require("./include");
+const {MODULE_FILE, UPLOAD_MODULE, HASH_FILE} = require("./constants");
+const {mLog, MY_LOG_ERROR, MY_LOG_DEBUG, isAlphanumericUnderscore, doAsync} = require("./include");
 const util = require("util");
 if (seo.url === "glitch-default") {
     seo.url = `https://${process.env.PROJECT_DOMAIN}.glitch.me`;
@@ -44,66 +44,42 @@ if (seo.url === "glitch-default") {
  * Returns pages/index.hbs with data built into it
  */
 fastify.get("/", (request, reply) => {
-    const module = path.join(path.parse(__dirname).dir, 'modules', MODULE_FILE)
-
     mLog(MY_LOG_DEBUG, `Get request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
 
-    const useHash = (success, failure) => {
-        let gen = crypto.createHash("md5")
-
-        try {
-            let stream = new fs.createReadStream(module)
-            stream.on('data', (data) => {
-                gen.update(data)
+    try {
+        if (FETCH_MODULE_HASH in request.query) {
+            const moduleDir = path.join(path.parse(__dirname).dir, 'modules', request.query[FETCH_MODULE_HASH]);
+            const moduleZip = path.join(moduleDir, MODULE_FILE)
+            const moduleHash = path.join(moduleDir, HASH_FILE)
+            let stream = fs.createReadStream(moduleHash)
+            stream.on('error', (e) => {
+                mLog(MY_LOG_ERROR, `Could not retrieve module hash: ${e}`)
+                reply.errorCode = 400
+                reply.send("Could not retrieve module hash")
             })
-
-            stream.on('error', e => {
-                mLog(MY_LOG_ERROR, "Error while generating hash: " + e)
-                failure(e)
-            })
-
-            stream.on('end', () => {
-                success(gen.digest('hex'))
-            })
-        } catch (e) {
-            mLog(MY_LOG_ERROR, "Error while generating hash: " + e)
-            failure(e)
+            return reply.send(stream)
         }
+
+        if (FETCH_MODULE in request.query) {
+            const moduleDir = path.join(path.parse(__dirname).dir, 'modules', request.query[FETCH_MODULE]);
+            const moduleZip = path.join(moduleDir, MODULE_FILE)
+            const moduleHash = path.join(moduleDir, HASH_FILE)
+            let stream = fs.createReadStream(moduleZip)
+            stream.on('error', (e) => {
+                mLog(MY_LOG_ERROR, `Could not retrieve module: ${e}`)
+                reply.errorCode = 400
+                reply.send("Could not retrieve module")
+            })
+            return reply.send(stream)
+        }
+
+        reply.send('HELLO')
+    } catch (e) {
+        mLog(MY_LOG_ERROR, `Could not retrieve module: ${e}`)
+        reply.errorCode = 400
+        reply.send("Could not retrieve module")
     }
 
-    if (FETCH_MODULE_HASH in request.query) {
-        return useHash((hash) => reply.send(hash), () => {
-            reply.errorCode = 404
-            reply.send("No module found")
-        })
-    }
-
-    if (FETCH_MODULE in request.query) {
-        return useHash((hash) => {
-            if (hash !== request.query[FETCH_MODULE]) {
-                reply.errorCode = 404
-                return reply.send("Module is not available")
-            }
-            try {
-                let stream = fs.createReadStream(module)
-                stream.on('error', e => {
-                    mLog(MY_LOG_ERROR, "Module not found: " + e)
-                    reply.errorCode = 404
-                    reply.send("No module found")
-                })
-                reply.send(stream)
-            } catch (e) {
-                mLog(MY_LOG_ERROR, "Module not found: " + e)
-                reply.errorCode = 404
-                reply.send("No module found")
-            }
-        }, () => {
-            reply.errorCode = 404
-            reply.send("No module found")
-        });
-    }
-
-    reply.send('HELLO')
 });
 
 /**
@@ -113,19 +89,36 @@ fastify.get("/", (request, reply) => {
  */
 fastify.post("/upload", async (request, reply) => {
     mLog(MY_LOG_DEBUG, `Upload request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
-
-    const module = path.join(path.parse(__dirname).dir, 'modules', MODULE_FILE)
     const authorization = request.headers['authorization']
 
     if (UPLOAD_MODULE in request.query) {
-
         if (!authorization || authorization !== process.env['UPLOAD_TOKEN']) {
             reply.errorCode = 401
             return reply.send("Invalid credentials")
         }
+
+        if (!isAlphanumericUnderscore(request.query[UPLOAD_MODULE])) {
+            reply.errorCode = 400
+            return reply.send("Invalid module name")
+        }
+
         try {
+            const moduleDir = path.join(path.parse(__dirname).dir, 'modules', request.query[UPLOAD_MODULE]);
+            await doAsync(fs.mkdir, moduleDir, {recursive: true})
+            const moduleZip = path.join(moduleDir, MODULE_FILE)
+            const moduleHash = path.join(moduleDir, HASH_FILE)
             const data = await request.file();
-            data.file.pipe(fs.createWriteStream(module));
+
+            let gen = crypto.createHash("md5")
+            data.file.on('data', buf => {
+                gen.update(buf)
+            })
+            data.file.on('end', () => {
+                fs.writeFile(moduleHash, gen.digest('hex'), (err) => {
+                    if (err) mLog(MY_LOG_ERROR, "Could not write hash file")
+                })
+            })
+            data.file.pipe(fs.createWriteStream(moduleZip));
             reply.send("File uploaded successfully");
         } catch (e) {
             mLog(MY_LOG_ERROR, `Module upload failed: ${e}`)

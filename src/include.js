@@ -46,6 +46,30 @@ function mLog(level, message, tag = "Y_Tech") {
     }
 }
 
+function isAlphanumericUnderscore(str) {
+    // Regular expression to match only alphanumeric characters and underscore
+    const regex = /^[a-zA-Z0-9_]+$/;
+    // Test the string against the regular expression
+    return regex.test(str);
+}
+
+function listenAsync(emitter, event) {
+    return new Promise((resolve, reject) => {
+        emitter.on(event, (err, data) => {
+            if (err) reject(err)
+            else resolve(data)
+        })
+    })
+}
+
+function doAsync(call, ...args) {
+    return new Promise((resolve, reject) => {
+        call(...args, (err, data) => {
+            if (err) reject(err)
+            else resolve(data)
+        })
+    })
+}
 
 module.exports = {
     MY_LOG_VERBOSE,
@@ -54,5 +78,8 @@ module.exports = {
     MY_LOG_INFO,
     MY_LOG_WARN,
     getTCPPublicAddress,
+    isAlphanumericUnderscore,
     mLog,
+    listenAsync,
+    doAsync
 }
