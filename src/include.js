@@ -1,10 +1,13 @@
 // noinspection JSUnusedGlobalSymbols
 
+/* load .env file */
+require('dotenv').config({path: '../.env'})
+
 const {Socket} = require("net");
 const {StunRequest, decode, constants: stunConstants} = require("stun");
 const fs = require("fs");
-const {LOG_TO_FILE} = require("../env");
 
+const LOG_TO_FILE = process.env['LOG_TO_FILE']
 
 function getTCPPublicAddress(localPort, callback, closeImmediately = true) {
     const sock = new Socket()
