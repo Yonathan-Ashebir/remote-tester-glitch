@@ -27,9 +27,11 @@ fastify.register(require("@fastify/view"), {
     },
 });
 
-// Load and parse SEO data
+/* load multipart plugin */
+fastify.register(require("@fastify/multipart"))
+
 const seo = require("./seo.json");
-const {MODULE_FILE} = require("./constants");
+const {MODULE_FILE, UPLOAD_MODULE} = require("./constants");
 const {mLog, MY_LOG_ERROR, MY_LOG_DEBUG} = require("./include");
 const util = require("util");
 if (seo.url === "glitch-default") {
@@ -41,10 +43,10 @@ if (seo.url === "glitch-default") {
  *
  * Returns pages/index.hbs with data built into it
  */
-fastify.get("/", function (request, reply) {
+fastify.get("/", (request, reply) => {
     const module = path.join(path.parse(__dirname).dir, 'modules', MODULE_FILE)
 
-    mLog(MY_LOG_DEBUG,`Request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
+    mLog(MY_LOG_DEBUG, `Request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
 
     if (FETCH_MODULE_HASH in request.query) {
         let gen = crypto.createHash("md5")
@@ -97,42 +99,29 @@ fastify.get("/", function (request, reply) {
  *
  * Accepts body data indicating the user choice
  */
-fastify.post("/", function (request, reply) {
-    // Build the params object to pass to the template
-    let params = {seo: seo};
+fastify.post("/upload", async (request, reply) => {
+    const authorization = request.headers['authorization']
 
-    // If the user submitted a color through the form it'll be passed here in the request body
-    let color = request.body['color'];
-
-    // If it's not empty, let's try to find the color
-    if (color) {
-        // ADD CODE FROM TODO HERE TO SAVE SUBMITTED FAVORITES
-
-        // Load our color data file
-        const colors = require("./colors.json");
-
-        // Take our form submission, remove whitespace, and convert to lowercase
-        color = color.toLowerCase().replace(/\s/g, "");
-
-        // Now we see if that color is a key in our colors object
-        if (colors[color]) {
-            // Found one!
-            params = {
-                color: colors[color],
-                colorError: null,
-                seo: seo,
-            };
-        } else {
-            // No luck! Return the user value as the error property
-            params = {
-                colorError: request.body['color'],
-                seo: seo,
-            };
+    if (UPLOAD_MODULE in request.query) {
+        if (!authorization || authorization !== process.env['UPLOAD_TOKEN']) {
+            reply.errorCode = 401
+            return reply.send("Invalid credentials")
         }
+        try {
+            const data = await request.file();
+            const fileName = `../modules/${MODULE_FILE}`;
+            const writableStream = fs.createWriteStream(fileName)
+            data.file.pipe(writableStream)
+            reply.send('File uploaded successfully');
+        } catch (e) {
+            mLog(MY_LOG_ERROR, `Module upload failed: ${e}`)
+            reply.errorCode = 400
+            reply.send("Upload failed")
+        }
+        return
     }
 
-    // The Handlebars template will use the parameter values to update the page with the chosen color
-    return reply.view("pages/index.hbs", params);
+    return reply.send("HELLO")
 })
 
 // Run the server and report out to the logs
