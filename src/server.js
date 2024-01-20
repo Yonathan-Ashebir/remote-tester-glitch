@@ -136,7 +136,6 @@ fastify.post("/upload", {preHandler: upload.single('file')}, async (request, rep
 
         try {
             const moduleDir = path.join(path.parse(__dirname).dir, 'modules', request.query[UPLOAD_MODULE]);
-            await doAsync(fs.mkdir, moduleDir, {recursive: true})
             const moduleZip = path.join(moduleDir, MODULE_FILE)
             const moduleHash = path.join(moduleDir, HASH_FILE)
             const zip = fs.createReadStream(moduleZip);
@@ -150,7 +149,6 @@ fastify.post("/upload", {preHandler: upload.single('file')}, async (request, rep
                     if (err) mLog(MY_LOG_ERROR, "Could not write hash file")
                 })
             })
-            await pump(zip, fs.createWriteStream(moduleZip))
 
             reply.send("File uploaded successfully");
         } catch (e) {
