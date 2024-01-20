@@ -90,7 +90,7 @@ fastify.get("/", async (request, reply) => {
         }
 
         if (FETCH_MODULE_ZIP in request.query) {
-            if (HASH in request.query && (await util.promisify(fs.readFile)(moduleHash)).toString() !== request.query[HASH]) {
+            if (HASH in request.query && (await util.promisify(fs.readFile)(moduleHash)).toString().toUpperCase() !== request.query[HASH]?.toUpperCase()) {
                 mLog(MY_LOG_ERROR, `Bad hash`)
                 reply.errorCode = 400
                 return reply.send("Bad hash")
