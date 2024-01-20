@@ -1,15 +1,18 @@
+const fastify = require("fastify")({
+    logger: false,
+});
 const path = require("path");
 const {FETCH_MODULE_HASH} = require('./constants.js')
 const crypto = require('crypto')
+const util = require('node:util')
 const fs = require('fs')
+const {pipeline} = require('node:stream')
+const pump = util.promisify(pipeline)
+const seo = require("./seo.json");
+const multer = require('fastify-multer')
 
-// Require the fastify framework and instantiate it
-const fastify = require("fastify")({
-    // Set this to true for detailed logging:
-    logger: false,
-});
-
-// ADD FAVORITES ARRAY VARIABLE FROM TODO HERE
+/* add plugins*/
+fastify.register(multer.contentParser)
 
 // Setup our static files
 fastify.register(require("@fastify/static"), {
@@ -27,13 +30,38 @@ fastify.register(require("@fastify/view"), {
     },
 });
 
-/* load multipart plugin */
-fastify.register(require("@fastify/multipart"))
+/* configure authorization */
+const isAuthorized = (request) => {
+    const authorization = request.headers['authorization']
+    return authorization && authorization === process.env['UPLOAD_TOKEN']
+}
 
-const seo = require("./seo.json");
+/* configure uploads */
+const upload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, callback) => {
+            if (!isAuthorized(req))
+                callback(new Error("Unauthorized"))
+            else if (!isAlphanumericUnderscore(req.query[UPLOAD_MODULE])) {
+                callback(new Error("Invalid module name"))
+            } else {
+                const moduleDir = path.join(path.parse(__dirname).dir, 'modules', req.query[UPLOAD_MODULE]);
+                fs.mkdir(moduleDir, {recursive: true}, () => callback(null, moduleDir))
+            }
+        },
+        filename: (request, file, cb) => {
+            cb(null, MODULE_FILE);
+        },
+    }),
+    limits: {
+        fileSize: 5 * 1024 * 1024, // Max file size (5 MB in this example)
+    },
+});
+
+
 const {MODULE_FILE, UPLOAD_MODULE, HASH_FILE, MODULE, FETCH_MODULE_ZIP, HASH} = require("./constants");
 const {mLog, MY_LOG_ERROR, MY_LOG_DEBUG, isAlphanumericUnderscore, doAsync} = require("./include");
-const util = require("util");
+
 if (seo.url === "glitch-default") {
     seo.url = `https://${process.env.PROJECT_DOMAIN}.glitch.me`;
 }
@@ -91,12 +119,12 @@ fastify.get("/", async (request, reply) => {
  *
  * Accepts body data indicating the user choice
  */
-fastify.post("/upload", async (request, reply) => {
+fastify.post("/upload", {preHandler: upload.single('file')}, async (request, reply) => {
     mLog(MY_LOG_DEBUG, `Upload request from ${request.socket.remoteAddress}:${request.socket.remotePort} => ${util.inspect(request.query)}`)
-    const authorization = request.headers['authorization']
+
 
     if (UPLOAD_MODULE in request.query) {
-        if (!authorization || authorization !== process.env['UPLOAD_TOKEN']) {
+        if (!isAuthorized(request)) {
             reply.errorCode = 401
             return reply.send("Invalid credentials")
         }
@@ -111,18 +139,19 @@ fastify.post("/upload", async (request, reply) => {
             await doAsync(fs.mkdir, moduleDir, {recursive: true})
             const moduleZip = path.join(moduleDir, MODULE_FILE)
             const moduleHash = path.join(moduleDir, HASH_FILE)
-            const data = await request.file();
+            const zip = fs.createReadStream(moduleZip);
 
             let gen = crypto.createHash("md5")
-            data.file.on('data', buf => {
+            zip.on('data', buf => {
                 gen.update(buf)
             })
-            data.file.on('end', () => {
+            zip.on('end', () => {
                 fs.writeFile(moduleHash, gen.digest('hex'), (err) => {
                     if (err) mLog(MY_LOG_ERROR, "Could not write hash file")
                 })
             })
-            data.file.pipe(fs.createWriteStream(moduleZip));
+            await pump(zip, fs.createWriteStream(moduleZip))
+
             reply.send("File uploaded successfully");
         } catch (e) {
             mLog(MY_LOG_ERROR, `Module upload failed: ${e}`)
