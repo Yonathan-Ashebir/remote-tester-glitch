@@ -46,11 +46,10 @@ function mLog(level, message, tag = "Y_Tech") {
     }
 }
 
-function isAlphanumericUnderscore(str) {
-    // Regular expression to match only alphanumeric characters and underscore
-    const regex = /^[a-zA-Z0-9_]+$/;
-    // Test the string against the regular expression
-    return regex.test(str);
+function getValidatedModuleName(str) {
+    const result = str.trim()
+    if (!/^[a-zA-Z0-9_]+(.[a-zA-Z0-9_]+)*$/.test(result)) throw new Error("Invalid package name")
+    return result
 }
 
 function listenAsync(emitter, event) {
@@ -78,7 +77,7 @@ module.exports = {
     MY_LOG_INFO,
     MY_LOG_WARN,
     getTCPPublicAddress,
-    isAlphanumericUnderscore,
+    getValidatedModuleName,
     mLog,
     listenAsync,
     doAsync
